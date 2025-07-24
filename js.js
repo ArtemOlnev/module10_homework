@@ -1,24 +1,75 @@
-const button = document.getElementById('toggleBtn');
-  const icon = document.getElementById('icon');
+const chat = document.getElementById('chat');
+const messageInput = document.getElementById('messageInput');
+const sendBtn = document.getElementById('sendBtn');
+const geoBtn = document.getElementById('geoBtn');
 
-  const iconStates = [
-    {
-      // Исходная иконка
-      svg: `<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" viewBox="0 0 16 16">
-              <path fill-rule="evenodd" d="M1 8a7 7 0 1 0 14 0A7 7 0 0 0 1 8m15 0A8 8 0 1 1 0 8a8 8 0 0 1 16 0m-5.904-2.854a.5.5 0 1 1 .707.708L6.707 9.95h2.768a.5.5 0 1 1 0 1H5.5a.5.5 0 0 1-.5-.5V6.475a.5.5 0 1 1 1 0v2.768z"/>
-            </svg>`
-    },
-    {
-      // Заблокированная иконка
-      svg: `<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" viewBox="0 0 16 16">
-              <path d="M16 8A8 8 0 1 0 0 8a8 8 0 0 0 16 0m-5.904-2.803a.5.5 0 1 1 .707.707L6.707 10h2.768a.5.5 0 0 1 0 1H5.5a.5.5 0 0 1-.5-.5V6.525a.5.5 0 0 1 1 0v2.768z"/>
-            </svg>`
+let socket;
+
+function connectWebSocket() {
+    socket = new WebSocket('wss://ws.postman-echo.com/raw/');
+
+    socket.onopen = () => {
+        appendMessage('Соединение установлено', 'server-message');
+    };
+
+    socket.onmessage = (event) => {
+        if (event.data.includes('Геолокация:')) return; // Игнорируем ответ сервера на геолокацию
+        appendMessage(event.data, 'server-message');
+    };
+
+    socket.onerror = (error) => {
+        appendMessage(`Ошибка соединения: ${error.type}`, 'error-message');
+    };
+
+    socket.onclose = () => {
+        appendMessage('Соединение закрыто', 'server-message');
+    };
+}
+
+// Функция добавления сообщения в чат
+function appendMessage(message, className) {
+    const messageElement = document.createElement('div');
+    messageElement.classList.add('message', className);
+    messageElement.textContent = message;
+    chat.appendChild(messageElement);
+    chat.scrollTop = chat.scrollHeight;
+}
+
+// Отправка текстового сообщения
+sendBtn.addEventListener('click', () => {
+    const message = messageInput.value.trim();
+    if (message) {
+        if (!socket || socket.readyState !== WebSocket.OPEN) {
+            appendMessage('Ошибка: соединение не активно', 'error-message');
+            connectWebSocket(); // Пытаемся переподключиться
+            return;
+        }
+        appendMessage(message, 'user-message');
+        socket.send(message);
+        messageInput.value = '';
     }
-  ];
+});
 
-  let currentState = 0;
+// Отправка геолокации
+geoBtn.addEventListener('click', () => {
+    if (!navigator.geolocation) {
+        appendMessage('Геолокация не поддерживается вашим браузером', 'error-message');
+    } else {
+        navigator.geolocation.getCurrentPosition(
+            (position) => {
+                const { latitude, longitude } = position.coords;
+                const geoUrl = `https://www.openstreetmap.org/#map=18/${latitude}/${longitude}`;
+                appendMessage(`Моя геолокация: <a href="${geoUrl}" target="_blank">Открыть карту</a>`, 'geo-message');
+                if (socket && socket.readyState === WebSocket.OPEN) {
+                    socket.send(`Геолокация: ${latitude}, ${longitude}`);
+                }
+            },
+            (error) => {
+                appendMessage(`Ошибка геолокации: ${error.message}`, 'error-message');
+            }
+        );
+    }
+});
 
-  button.addEventListener('click', () => {
-    currentState = (currentState + 1) % iconStates.length;
-    icon.innerHTML = iconStates[currentState].svg;
-  });
+// Инициализация соединения при загрузке страницы
+connectWebSocket();
